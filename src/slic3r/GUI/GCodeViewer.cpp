@@ -26,6 +26,7 @@
 #include "libslic3r/Layer.hpp"
 #include "Widgets/ProgressDialog.hpp"
 #include "MsgDialog.hpp"
+#include <imgui.h>
 
 #if ENABLE_ACTUAL_SPEED_DEBUG
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -2846,19 +2847,40 @@ void GCodeViewer::render_legend_color_arr_recommen(float window_padding)
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(window_padding * 3, 0));
 
-    // ImGui::Dummy({window_padding, window_padding});
-    ImGui::BeginChild("#AMS", ImVec2(0, AMS_container_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
-    {
-        float available_width   = ImGui::GetContentRegionAvail().x;
-        float half_width       = available_width * 0.49f;
-        float spacing           = 18.0f * m_scale;
+    float spacing = 18.0f * m_scale;
+    const int items_per_row = 4;
+    const int actual_items_per_row = std::max(
+        1,
+        std::min(items_per_row, static_cast<int>(std::max(m_left_extruder_filament.size(), m_right_extruder_filament.size()))));
+    const float left_label_width  = ImGui::CalcTextSize(_u8L("Left nozzle").c_str()).x;
+    const float right_label_width = ImGui::CalcTextSize(_u8L("Right nozzle").c_str()).x;
+    const float min_label_width   = std::max(left_label_width, right_label_width) + window_padding * 4.0f;
+    // Keep a small safety reserve so the last item doesn't clip, without over-expanding row width.
+    const float filament_item_extra_width = ImGui::GetStyle().ItemInnerSpacing.x + 4.0f * m_scale;
+    const float filament_item_slot_width = filament_group_item_align_width + filament_item_extra_width;
+    const float min_items_width = actual_items_per_row * filament_item_slot_width + (actual_items_per_row - 1) * spacing + window_padding * 4.0f;
+    const float panel_width       = std::max(min_label_width, min_items_width);
 
+    const float child_gap = ImGui::GetStyle().ItemSpacing.x;
+    const float ams_pad_x = window_padding * 3.0f; // from PushStyleVar before #AMS
+
+    const float row_width = panel_width * 2.0f + child_gap;
+    const float title_width = ImGui::CalcTextSize(_u8L("Filament Grouping").c_str()).x + child_gap +
+                              ImGui::CalcTextSize(_u8L("Why this grouping").c_str()).x;
+    // Keep AMS wide enough for both the panel row and the title row.
+    const float use = std::max(0.0f, std::max(row_width, title_width) + ams_pad_x * 2.0f);
+
+    // ImGui::Dummy({window_padding, window_padding});
+    ImGui::BeginChild("#AMS", ImVec2(use, AMS_container_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
+    {
+        const float content_w = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
+        const float child_w   = std::max(0.0f, (content_w - child_gap) * 0.5f);
         ImGui::Dummy({window_padding, window_padding});
         ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(1.0f,1.0f,1.0f,0.6f));
         imgui.bold_text(_u8L("Filament Grouping"));
         ImGui::SameLine();
         std::string tip_str = _u8L("Why this grouping");
-        ImGui::SetCursorPosX(ImGui::GetWindowContentRegionWidth() - window_padding - ImGui::CalcTextSize(tip_str.c_str()).x);
+        ImGui::SetCursorPosX( ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(tip_str.c_str()).x);
         link_filament_group_wiki(tip_str);
         ImGui::Separator();
         ImGui::PopStyleColor();
@@ -2869,30 +2891,31 @@ void GCodeViewer::render_legend_color_arr_recommen(float window_padding)
 
         ImDrawList *child_begin_draw_list = ImGui::GetWindowDrawList();
         ImVec2      cursor_pos            = ImGui::GetCursorScreenPos();
-        child_begin_draw_list->AddRectFilled(cursor_pos, ImVec2(cursor_pos.x + half_width, cursor_pos.y + line_height), IM_COL32(255, 255, 255, 10));
-        ImGui::BeginChild("#LeftAMS", ImVec2(half_width, ams_item_height), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
+        child_begin_draw_list->AddRectFilled(cursor_pos, ImVec2(cursor_pos.x + child_w, cursor_pos.y + line_height), IM_COL32(255, 255, 255, 10));
+
+        ImGui::BeginChild("#LeftAMS", ImVec2(child_w, ams_item_height), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
         {
             imgui.text(_u8L("Left nozzle"));
             ImGui::Dummy({window_padding, window_padding});
             int index = 1;
             for (const auto &extruder_filament : m_left_extruder_filament) {
                 imgui.filament_group(get_filament_display_type(extruder_filament), extruder_filament.hex_color.c_str(), extruder_filament.filament_id, filament_group_item_align_width);
-                if (index % 4 != 0) { ImGui::SameLine(0, spacing); }
+                if (index % items_per_row != 0) { ImGui::SameLine(0, spacing); }
                 index++;
             }
             ImGui::EndChild();
         }
-        ImGui::SameLine();
+        ImGui::SameLine(0.0f, child_gap);
         cursor_pos = ImGui::GetCursorScreenPos();
-        child_begin_draw_list->AddRectFilled(cursor_pos, ImVec2(cursor_pos.x + half_width, cursor_pos.y + line_height), IM_COL32(255, 255, 255, 10));
-        ImGui::BeginChild("#RightAMS", ImVec2(half_width, ams_item_height), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
+        child_begin_draw_list->AddRectFilled(cursor_pos, ImVec2(cursor_pos.x + child_w, cursor_pos.y + line_height), IM_COL32(255, 255, 255, 10));
+        ImGui::BeginChild("#RightAMS", ImVec2(child_w, ams_item_height), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
         {
             imgui.text(_u8L("Right nozzle"));
             ImGui::Dummy({window_padding, window_padding});
             int index = 1;
             for (const auto &extruder_filament : m_right_extruder_filament) {
                 imgui.filament_group(get_filament_display_type(extruder_filament), extruder_filament.hex_color.c_str(), extruder_filament.filament_id, filament_group_item_align_width);
-                if (index % 4 != 0) { ImGui::SameLine(0, spacing); }
+                if (index % items_per_row != 0) { ImGui::SameLine(0, spacing); }
                 index++;
             }
             ImGui::EndChild();
