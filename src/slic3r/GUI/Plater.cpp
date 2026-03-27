@@ -231,6 +231,16 @@ static string get_diameter_string(float diameter)
     return s;
 }
 
+bool Plater::should_use_select_machine_preflight_for_print(const PresetBundle& preset_bundle)
+{
+    PresetBundle& preset = *wxGetApp().preset_bundle;
+    if (preset.use_bbl_network())
+        return true;
+
+    NetworkAgent* agent = wxGetApp().getAgent();
+    return agent;
+}
+
 bool Plater::has_illegal_filename_characters(const wxString& wxs_name)
 {
     std::string name = into_u8(wxs_name);
@@ -2402,16 +2412,19 @@ void Sidebar::update_all_preset_comboboxes()
         auto print_btn_type = MainFrame::PrintSelectType::eExportGcode;
         wxString url = cfg.opt_string("print_host_webui").empty() ? cfg.opt_string("print_host") : cfg.opt_string("print_host_webui");
         wxString apikey;
-        if(url.empty())
+        if (url.empty()) {
             url = wxString::Format("file://%s/web/orca/missing_connection.html", from_u8(resources_dir()));
-        else {
+        } else {
             if (!url.Lower().starts_with("http"))
                 url = wxString::Format("http://%s", url);
             const auto host_type = cfg.option<ConfigOptionEnum<PrintHostType>>("host_type")->value;
             if (cfg.has("printhost_apikey") && (host_type != htSimplyPrint))
                 apikey = cfg.opt_string("printhost_apikey");
-            print_btn_type = preset_bundle.is_bbl_vendor() ? MainFrame::PrintSelectType::ePrintPlate : MainFrame::PrintSelectType::eSendGcode;
-        }
+
+            print_btn_type = Plater::should_use_select_machine_preflight_for_print(preset_bundle)
+                                ? MainFrame::PrintSelectType::ePrintPlate
+                                : MainFrame::PrintSelectType::eSendGcode;
+}
 
         p_mainframe->load_printer_url(url, apikey);
 
@@ -3398,6 +3411,244 @@ void Sidebar::load_ams_list(MachineObject* obj)
     }
 
     p->combo_printer->update();
+}
+
+void Sidebar::sync_box_list(bool is_from_big_sync_btn)
+{
+    
+    auto obj = wxGetApp().getDeviceManager()->get_selected_machine();
+    // std::string cur_preset_name = wxGetApp().get_tab(Preset::TYPE_PRINTER)->get_presets()->get_edited_preset().name;
+    // if(obj && qdsdev && cur_preset_name.find(obj->m_type) != std::string::npos)
+    //     qdsdev->upBoxInfoToBoxMsg(obj);
+    // else {
+    //     GetBoxInfoDialog* m_get_box_dlg = new GetBoxInfoDialog(wxGetApp().plater());
+    //     if(m_get_box_dlg->ShowModal() == wxID_OK){
+    //         load_box_list();
+    //     } else {
+    //         return;
+    //     }
+    // }
+    // //y76
+
+    if (!obj)
+        return;
+    GUI::wxGetApp().sidebar().load_ams_list(obj);
+
+    auto& list = wxGetApp().preset_bundle->filament_ams_list;
+    if (list.empty()) {
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "list.empty()" << list.empty();
+        auto printer_name = p->plater->get_selected_printer_name_in_combox();
+        p->plater->pop_warning_and_go_to_device_page(printer_name, Plater::PrinterWarningType::NOT_CONNECTED, _L("Sync printer information"));
+        return;
+    }
+    std::string ams_filament_ids = wxGetApp().app_config->get("ams_filament_ids", p->ams_list_device);
+    std::vector<std::string> list2;
+    if (!ams_filament_ids.empty()) {
+        boost::algorithm::split(list2, ams_filament_ids, boost::algorithm::is_any_of(","));
+    }
+    wxGetApp().plater()->update_all_plate_thumbnails(true);
+    SyncAmsInfoDialog::SyncInfo temp_info;
+    temp_info.use_dialog_pos = false;
+    temp_info.cancel_text_to_later = false;
+    if (m_sync_dlg == nullptr) {
+        m_sync_dlg = new SyncAmsInfoDialog(this, temp_info);
+    } else {
+        m_sync_dlg->set_info(temp_info);
+    }
+    int dlg_res{ (int)wxID_CANCEL };
+    if (m_sync_dlg->is_need_show()) {
+        m_sync_dlg->deal_only_exist_ext_spool(obj);
+        if (is_from_big_sync_btn && m_sync_dlg->is_dirty_filament()) {
+            wxGetApp().get_tab(Preset::TYPE_FILAMENT)->select_preset(wxGetApp().preset_bundle->filament_presets[0], false, "", false, true);
+            wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);
+            dynamic_filament_list.update();
+        }
+        m_sync_dlg->set_check_dirty_fialment(false);
+        dlg_res = m_sync_dlg->ShowModal();
+    }
+    else {
+        dlg_res = (int)wxID_YES;
+    }
+    if (dlg_res == wxID_CANCEL)
+        return;
+    auto sync_result = m_sync_dlg->get_result();
+    if (!sync_result.is_same_printer) {
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "check error: sync_result.is_same_printer value is false";
+        return;
+    }
+
+    // Keep pre-print sync UI-only. Full filament/preset sync may mutate plater config and trigger Print::apply invalidation.
+    if (!is_from_big_sync_btn) {
+        auto badge_combox_filament = [](PlaterPresetComboBox *c) {
+            auto tip = _L("Filament information is synchronized for the printer UI only.");
+            c->SetToolTip(tip);
+            c->ShowBadge(true);
+        };
+        clear_combos_filament_badge();
+        if (sync_result.direct_sync) {
+            for (auto &c : p->combos_filament)
+                badge_combox_filament(c);
+        } else {
+            for (auto iter : sync_result.sync_maps) {
+                if (iter.second.ams_id == "" || iter.second.slot_id == "")
+                    continue;
+                auto temp_index = iter.first;
+                if (temp_index < p->combos_filament.size()) {
+                    auto &c = p->combos_filament[temp_index];
+                    badge_combox_filament(c);
+                }
+            }
+        }
+
+        for (auto &c : p->combos_filament)
+            c->update();
+        update_filaments_area_height();
+        update_dynamic_filament_list();
+        Layout();
+        return;
+    }
+
+    list2.resize(list.size());
+    auto iter = list.begin();
+    for (int i = 0; i < list.size(); ++i, ++iter) {
+        auto & ams = iter->second;
+        auto filament_id = ams.opt_string("filament_id", 0u);
+        ams.set_key_value("filament_changed", new ConfigOptionBool{dlg_res == wxID_YES || list2[i] != filament_id});
+        list2[i] = filament_id;
+    }
+
+    // QDS:Record consumables information before synchronization
+    std::vector<string> color_before_sync;
+    std::vector<int> is_support_before;
+    DynamicPrintConfig& project_config = wxGetApp().preset_bundle->project_config;
+    ConfigOptionStrings* color_opt = project_config.option<ConfigOptionStrings>("filament_colour");
+    for (int i = 0; i < p->combos_filament.size(); ++i) {
+        is_support_before.push_back(is_support_filament(i));
+        color_before_sync.push_back(color_opt->values[i]);
+    }
+    MergeFilamentInfo merge_info;
+    std::vector<std::pair<DynamicPrintConfig *,std::string>> unknowns;
+    auto enable_append = wxGetApp().app_config->get_bool("enable_append_color_by_sync_ams");
+    auto n             = wxGetApp().preset_bundle->sync_ams_list(unknowns, !sync_result.direct_sync, sync_result.sync_maps, enable_append, merge_info);
+    wxString detail;
+    for (auto & uk : unknowns) {
+        auto tray_name     = uk.first->opt_string("tray_name", 0u);
+        auto filament_type = uk.first->opt_string("filament_type", 0u);
+        detail += from_u8("\n- " + tray_name + "(" + filament_type + ") ") + _L(uk.second);
+    }
+    if (n == 0) {
+        MessageDialog dlg(this,
+            _L("There are no compatible filaments, and sync is not performed.") + detail,
+            _L("Sync filaments with BOX"), wxOK);
+        dlg.ShowModal();
+        return;
+    }
+    ams_filament_ids = boost::algorithm::join(list2, ",");
+    wxGetApp().app_config ->set("ams_filament_ids", p->ams_list_device, ams_filament_ids);
+    if (!unknowns.empty()) {
+        MessageDialog dlg(this,
+            _L("There are some unknown or uncompatible filaments mapped to generic preset.\nPlease update QIDI Studio or restart QIDI Studio to check if there is an update to system presets.") + detail,
+            _L("Sync filaments with BOX"), wxOK);
+        dlg.ShowModal();
+    }
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "on_filament_count_change";
+    wxGetApp().plater()->on_filament_count_change(n);
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "finish on_filament_count_change";
+    for (auto& c : p->combos_filament)
+        c->update();
+    // Expand filament list
+    p->m_panel_filament_content->SetMaxSize({-1, FromDIP(174)});
+    auto min_size = p->m_panel_filament_content->GetSizer()->GetMinSize();
+    if (min_size.y > p->m_panel_filament_content->GetMaxHeight())
+        min_size.y = p->m_panel_filament_content->GetMaxHeight();
+    p->m_panel_filament_content->SetMinSize({-1, min_size.y});
+    // QDS:Synchronized consumables information
+    // auto calculation of flushing volumes
+    for (int i = 0; i < p->combos_filament.size(); ++i) {
+        if (i >= color_before_sync.size()) {
+            auto_calc_flushing_volumes(i);
+        }
+        else if(color_before_sync[i] != color_opt->values[i] && wxGetApp().app_config->get("auto_calculate_flush") != "disabled"){
+            auto_calc_flushing_volumes(i);
+        }
+        else if(is_support_filament(i) !=is_support_before[i] && wxGetApp().app_config->get("auto_calculate_flush") == "all"){
+            auto_calc_flushing_volumes(i);
+        }
+    }
+    auto badge_combox_filament = [](PlaterPresetComboBox *c) {
+        auto tip     = _L("Filament type and color information have been synchronized, but slot information is not included.");
+        c->SetToolTip(tip);
+        c->ShowBadge(true);
+    };
+    { // badge ams filament
+        clear_combos_filament_badge();
+        if (sync_result.direct_sync) {
+            for (auto &c : p->combos_filament) {
+                badge_combox_filament(c);
+            }
+        }
+    }
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "prepare enable_merge_color_by_sync_ams";
+    if (!merge_info.is_empty() && wxGetApp().app_config->get_bool("enable_merge_color_by_sync_ams")) { // merge same color and preset filament//use same ams
+        auto reduce_index = [](MergeFilamentInfo &merge_info,int value) {
+            for (size_t i = 0; i < merge_info.merges.size(); i++) {
+                auto &cur = merge_info.merges[i];
+                for (size_t j = 0; j < cur.size(); j++) {
+                    if (value < cur[j]) {
+                        cur[j] = cur[j] - 1;
+                    }
+                }
+            }
+        };
+        std::vector<bool> sync_ams_badges;
+        for (auto iter : sync_result.sync_maps) {
+            sync_ams_badges.push_back(false);
+            if (iter.second.ams_id == "" || iter.second.slot_id == "") {
+                continue;
+            }
+            sync_ams_badges.back() = true;
+        }
+
+        for (size_t i = 0; i < merge_info.merges.size(); i++) {
+            auto& cur = merge_info.merges[i];
+            for (int j = cur.size() -1; j >= 1 ; j--) {
+                auto last_index = cur[j];
+                change_filament(last_index, cur[0]);
+                cur.erase(cur.begin() + j);
+                sync_ams_badges.erase(sync_ams_badges.begin() + last_index);
+                reduce_index(merge_info, last_index);
+            }
+        }
+        for (size_t i = 0; i < sync_ams_badges.size(); i++) {
+            if (sync_ams_badges[i] == true) {
+                if (i < p->combos_filament.size()) {
+                    auto &c = p->combos_filament[i];
+                    badge_combox_filament(c);
+                } else {
+                    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << "check error: p->combos_filament array out of bound";
+                }
+            }
+        }
+    } else {
+        for (auto iter : sync_result.sync_maps) {
+            if (iter.second.ams_id == "" || iter.second.slot_id == "") {
+                continue;
+            }
+            auto temp_index = iter.first;
+            if (temp_index < p->combos_filament.size() && temp_index >= 0) {
+                auto &c        = p->combos_filament[temp_index];
+                badge_combox_filament(c);
+            }
+        }
+    }
+    Layout();
+
+    wxGetApp().get_tab(Preset::TYPE_FILAMENT)->select_preset(wxGetApp().preset_bundle->filament_presets[0]);
+    wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);
+    dynamic_filament_list.update();
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "begin pop_finsish_sync_ams_dialog";
+    pop_finsish_sync_ams_dialog();
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "finish pop_finsish_sync_ams_dialog";
 }
 
 void Sidebar::sync_ams_list(bool is_from_big_sync_btn)
@@ -7659,14 +7910,14 @@ unsigned int Plater::priv::update_background_process(bool force_validation, bool
 
     Print::ApplyStatus invalidated;
     const auto& preset_bundle = wxGetApp().preset_bundle;
-    if (preset_bundle->get_printer_extruder_count() > 1) {
+    // if (preset_bundle->get_printer_extruder_count() > 1) {
         PartPlate* cur_plate = background_process.get_current_plate();
         std::vector<int> f_maps = cur_plate->get_real_filament_maps(preset_bundle->project_config);
         invalidated = background_process.apply(this->model, preset_bundle->full_config(false, f_maps));
         background_process.fff_print()->set_extruder_filament_info(get_extruder_filament_info());
-    }
-    else
-        invalidated = background_process.apply(this->model, preset_bundle->full_config(false));
+    // }
+    // else
+    //     invalidated = background_process.apply(this->model, preset_bundle->full_config(false));
 
     if ((invalidated == Print::APPLY_STATUS_CHANGED) || (invalidated == Print::APPLY_STATUS_INVALIDATED))
         // BBS: add only gcode mode
@@ -9837,6 +10088,8 @@ void Plater::priv::on_action_publish(wxCommandEvent &event)
     }
 }
 
+
+
 void Plater::priv::on_action_print_plate(SimpleEvent&)
 {
     if (q != nullptr) {
@@ -9852,7 +10105,40 @@ void Plater::priv::on_action_print_plate(SimpleEvent&)
         m_select_machine_dlg->prepare(partplate_list.get_curr_plate_index());
         m_select_machine_dlg->ShowModal();
     } else {
-        q->send_gcode_legacy(PLATE_CURRENT_IDX, nullptr, true);
+
+         // Build required-data from current sliced plate                                                                                                                                                                                                  
+  Slic3r::DynamicPrintConfig cfg = wxGetApp().preset_bundle->printers.get_edited_preset().config;                                                                                                                                                   
+  Slic3r::Model mdl = wxGetApp().model();                                                                                                                                                                                                           
+  Slic3r::PlateDataPtrs plate_data_list;                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                    
+  // current plate only                                                                                                                                                                                                                             
+  int curr_idx = partplate_list.get_curr_plate_index();                                                                                                                                                                                             
+  partplate_list.store_to_3mf_structure(plate_data_list, true, curr_idx);                                                                                                                                                                           
+                                                                                                                                                                                                                                                    
+  PartPlate* curr_plate = partplate_list.get_curr_plate();                                                                                                                                                                                          
+  std::string gcode_path = curr_plate ? curr_plate->get_gcode_filename() : "";                                                                                                                                                                      
+  std::string file_name  = q->get_export_gcode_filename("", true).ToStdString();                                                                                                                                                                    
+PresetBundle* pb = wxGetApp().preset_bundle;                                                                                                                                                                                                      
+  std::string model_id = pb->printers.get_edited_preset().get_printer_type(pb);                                                                                                                                                                     
+                                                                                                                                                                                                                                                    
+  for (auto* plate : plate_data_list) {                                                                                                                                                                                                             
+      if (plate) plate->printer_model_id = model_id;                                                                                                                                                                                                
+  }                                                                                                                                                                                                                                                                         
+  // this populates m_required_data_file_path / list                              
+q->update_print_required_data(cfg, mdl, plate_data_list, file_name, gcode_path); 
+        int extruders_size = wxGetApp().plater()->get_partplate_list().get_curr_plate()->get_used_filaments().size();
+        bool is_can_change_color = preview->get_canvas3d()->get_gcode_viewer().get_layers_slider()->get_is_can_change_color();
+
+        if(extruders_size > 1 && !is_can_change_color){
+            wxGetApp().plater()->sidebar().sync_box_list();
+        }
+        // q->send_gcode_legacy(PLATE_CURRENT_IDX, nullptr, true);
+        if (!m_select_machine_dlg)
+            m_select_machine_dlg = new SelectMachineDialog(q);
+        m_select_machine_dlg->set_print_type(PrintFromType::FROM_NORMAL);
+        m_select_machine_dlg->prepare(partplate_list.get_curr_plate_index());
+        m_select_machine_dlg->ShowModal();
+        
     }
 }
 
@@ -9953,7 +10239,12 @@ void Plater::priv::on_action_print_all(SimpleEvent&)
         m_select_machine_dlg->prepare(PLATE_ALL_IDX);
         m_select_machine_dlg->ShowModal();
     } else {
-        q->send_gcode_legacy(PLATE_ALL_IDX, nullptr, true);
+        // q->send_gcode_legacy(PLATE_ALL_IDX, nullptr, true);
+        if (!m_select_machine_dlg)
+            m_select_machine_dlg = new SelectMachineDialog(q);
+        m_select_machine_dlg->set_print_type(PrintFromType::FROM_NORMAL);
+        m_select_machine_dlg->prepare(PLATE_ALL_IDX);
+        m_select_machine_dlg->ShowModal();
     }
 }
 

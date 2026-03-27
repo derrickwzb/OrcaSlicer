@@ -272,9 +272,13 @@ void PrintJob::process(Ctl &ctl)
     params.task_ext_change_assist = this->task_ext_change_assist;
     params.try_emmc_print         = this->could_emmc_print;
 
-    if (m_print_type == "from_sdcard_view") {
-        params.dst_file = m_dst_path;
-    }
+    // if (m_print_type == "from_sdcard_view") {
+    //     params.dst_file = m_dst_path;
+    // }
+
+    if ((!m_dst_path.empty() && !wxGetApp().preset_bundle->is_bbl_vendor() )|| m_print_type == "from_sdcard_view") {                                                                                                                                                                                               
+        params.dst_file = m_dst_path;                                                                                                                                                                                        
+    }  
 
     if (wxGetApp().model().model_info && wxGetApp().model().model_info.get()) {
         ModelInfo* model_info = wxGetApp().model().model_info.get();

@@ -1,4 +1,5 @@
 #include "SelectMachine.hpp"
+#include "DeviceManager.hpp"
 #include "I18N.hpp"
 
 #include "libslic3r/Utils.hpp"
@@ -2476,6 +2477,7 @@ void SelectMachineDialog::on_send_print()
         BOOST_LOG_TRIVIAL(info) << "print_job: m_print_type = from_normal";
         m_print_job->m_print_type = "from_normal";
         m_print_job->set_project_name(m_current_project_name.utf8_string());
+        m_print_job->set_dst_name(m_required_data_file_path);
     }
     else if(m_print_type == PrintFromType::FROM_SDCARD_VIEW){
         BOOST_LOG_TRIVIAL(info) << "print_job: m_print_type = from_sdcard_view";
@@ -2505,6 +2507,7 @@ void SelectMachineDialog::on_send_print()
     m_print_job->task_ams_mapping2     = ams_mapping_array2;
     m_print_job->task_ams_mapping_info = ams_mapping_info;
 
+    
     /* build nozzles info for multi extruders printers */
     if (build_nozzles_info(m_print_job->task_nozzles_info)) {
         BOOST_LOG_TRIVIAL(error) << "build_nozzle_info errors";
@@ -2708,9 +2711,10 @@ int SelectMachineDialog::update_print_required_data(Slic3r::DynamicPrintConfig c
     m_required_data_model = model;
     //m_required_data_plate_data_list = plate_data_list;
     for (auto i = 0; i < plate_data_list.size(); i++) {
-        if (!plate_data_list[i]->gcode_file.empty()) {
-            m_required_data_plate_data_list.push_back(plate_data_list[i]);
-        }
+        // if (!plate_data_list[i]->gcode_file.empty()) {
+        //     m_required_data_plate_data_list.push_back(plate_data_list[i]);
+        // }
+        m_required_data_plate_data_list.push_back(plate_data_list[i]);
     }
 
     m_required_data_file_name = file_name;
@@ -2998,7 +3002,7 @@ void SelectMachineDialog::on_selection_changed(wxCommandEvent &event)
     MachineObject* obj = nullptr;
     for (int i = 0; i < m_list.size(); i++) {
         if (i == selection) {
-
+            // wxGetApp().sidebar().sync_ams_list(true);
             //check lan mode machine
             if (m_list[i]->is_lan_mode_printer() && !m_list[i]->has_access_right()) {
                 ConnectPrinterDialog dlg(wxGetApp().mainframe, wxID_ANY, _L("Input access code"));
@@ -3176,415 +3180,534 @@ static wxString _get_ext_loc_str(const std::unordered_set<int>& extruders, int t
 
 void SelectMachineDialog::update_show_status(MachineObject* obj_)
 {
-    m_pre_print_checker.clear();
+    bool preset_is_bbl = wxGetApp().preset_bundle && wxGetApp().preset_bundle->is_bbl_vendor();
+    // if(!preset_is_bbl)
+    // {
+    //     if (!obj_) {
+    //         show_status(PrintDialogStatus::PrintStatusInvalidPrinter);
+    //         update_ams_check(nullptr);
+    //         return;
+    //     }
+    //     //obj_ = new MachineObject(wxGetApp().getDeviceManager(),wxGetApp().getAgent(),"machine_name","id",wxGetApp().getAgent()->get_printer_agent()->get_user_selected_machine());
 
-    /*agent check and printer valid check*/
-    NetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
-    if (!agent) {
-        show_status(PrintDialogStatus::PrintStatusNoUserLogin);
-        update_ams_check(nullptr);
-        return;
-    }
+    //     PartPlate* plate = m_plater->get_partplate_list().get_curr_plate();
 
-    if (!obj_) {
-        show_status(PrintDialogStatus::PrintStatusInvalidPrinter);
-        update_ams_check(nullptr);
-        return;
-    }
+    //     if (m_print_type == PrintFromType::FROM_NORMAL) {
+    //         if (plate && !plate->is_valid_gcode_file()) {
+    //             show_status(PrintDialogStatus::PrintStatusBlankPlate);
+    //             return;
+    //         }
+    //     }
 
-    /*combobox check*/
-    if (m_print_type == PrintFromType::FROM_SDCARD_VIEW) {
-        m_printer_box->GetPrinterComboBox()->Disable();
-    } else {
-        if (get_status() == PrintDialogStatus::PrintStatusRefreshingMachineList)
+    //     //y78
+    //     bool from_sd_card = (m_print_type == PrintFromType::FROM_SDCARD_VIEW);
+    //     if(from_sd_card && m_ams_mapping_result.empty())
+    //         do_ams_mapping(obj_, true);
+
+    //     reset_timeout();
+
+    //         // //y75
+    //         // if ( m_checkbox_list["enable_multi_box"]->getValue() == "off") {
+    //         //     m_ams_mapping_result.clear();
+    //         //     sync_ams_mapping_result(m_ams_mapping_result);
+    //         //     return;
+    //         // }
+
+    //         if (!m_check_flag) {
+    //             //update_select_layout(obj_);
+    //             //update_ams_check(obj_);
+    //             m_check_flag = true;
+    //         }
+
+    //         if (m_ams_mapping_result.empty()) {
+    //             do_ams_mapping(obj_, true);
+    //             update_filament_change_count();
+    //         }
+
+    //         /* multi color external change assist*/
+    //         if(obj_->is_support_ext_change_assist && !m_check_ext_change_assist->IsShown()){
+    //             m_check_ext_change_assist->Show(true);
+    //             m_label_ext_change_assist->Show(true);
+    //         }else if(!obj_->is_support_ext_change_assist &&m_check_ext_change_assist->IsShown()){
+    //             m_check_ext_change_assist->Hide();
+    //             m_label_ext_change_assist->Hide();
+    //         }
+    //         /*check external change assist*/
+    //         if(!m_ams_mapping_result.empty() && is_enable_external_change_assist(m_ams_mapping_result)){
+    //             m_check_ext_change_assist->Enable(true);
+    //         }else{
+    //             m_check_ext_change_assist->SetValue(false);
+    //             m_check_ext_change_assist->Enable(false);
+    //         }
+
+    //         // {
+    //         //     const bool show_warn_when_drying = is_selected_ams_drying(obj_);
+    //         //     const bool is_currently_shown = (m_txt_warn_when_drying != nullptr) ? m_txt_warn_when_drying->IsShown() : false;
+    //         //     if (is_currently_shown != show_warn_when_drying) {
+    //         //         m_warn_when_drying_sizer->Show(show_warn_when_drying);
+    //         //         Layout();
+    //         //         Fit();
+    //         //     }
+    //         // }
+
+
+    //         if (!m_ams_mapping_res) {
+    //             for (auto mres : m_ams_mapping_result) {
+    //                 if (mres.ams_id.empty() && mres.slot_id.empty()) {
+    //                     show_status(PrintDialogStatus::PrintStatusAmsMappingInvalid);
+    //                     return;
+    //                 }
+    //             }
+    //         }
+
+    //         //y67 y75
+    //         //const auto &full_config = wxGetApp().preset_bundle->full_config();
+    //         //size_t      nozzle_nums = full_config.option<ConfigOptionFloatsNullable>("nozzle_diameter")->values.size();
+    //         //if (!DevPrinterConfigUtil::support_ams_ext_mix_print(obj_->printer_type))
+    //         // if (nozzle_nums == 1) {
+    //         //     bool useAms = _HasAms(m_ams_mapping_result);
+    //         //     bool useExt = _HasExt(m_ams_mapping_result);
+    //         //     if (useAms && useExt) {
+    //         //         show_status(PrintDialogStatus::PrintStatusAmsMappingMixInvalid);
+    //         //         return;
+    //         //     }
+    //         // }
+
+    //         if (m_print_status == PrintDialogStatus::PrintStatusAmsMappingInvalid && m_ams_mapping_result.size() == 1 && _HasExt(m_ams_mapping_result)) {
+    //             show_status(PrintDialogStatus::PrintStatusInit);
+    //             return;
+    //         }
+    // }
+    // else{
+        m_pre_print_checker.clear();
+
+        /*agent check and printer valid check*/
+        NetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
+        if (!agent) {
+            show_status(PrintDialogStatus::PrintStatusNoUserLogin);
+            update_ams_check(nullptr);
+            return;
+        }
+
+        if (!obj_) {
+            show_status(PrintDialogStatus::PrintStatusInvalidPrinter);
+            update_ams_check(nullptr);
+            return;
+        }
+
+        /*combobox check*/
+        if (m_print_type == PrintFromType::FROM_SDCARD_VIEW) {
             m_printer_box->GetPrinterComboBox()->Disable();
-        else
-            m_printer_box->GetPrinterComboBox()->Enable();
-    }
-
-    /*mode check*/
-    if (get_status() == PrintDialogStatus::PrintStatusRefreshingMachineList || get_status() == PrintDialogStatus::PrintStatusSending) return;
-
-    /*no valid gcode file*/
-    if (m_print_type == PrintFromType::FROM_NORMAL) {
-        PartPlate* plate = m_plater->get_partplate_list().get_curr_plate();
-        if (plate && !plate->is_valid_gcode_file()) {
-            show_status(PrintDialogStatus::PrintStatusBlankPlate);
-            return;
-        }
-    }
-
-    /** error check **/
-    /* check cloud machine connections */
-    if (!obj_->is_lan_mode_printer() && !agent->is_server_connected()) {
-        show_status(PrintDialogStatus::PrintStatusConnectingServer);
-        reset_timeout();
-        return;
-    }
-
-    if (!obj_->is_info_ready()) {
-        if (is_timeout()) {
-            m_ams_mapping_result.clear();
-            sync_ams_mapping_result(m_ams_mapping_result);
-            show_status(PrintDialogStatus::PrintStatusReadingTimeout);
         } else {
-            m_timeout_count++;
-            show_status(PrintDialogStatus::PrintStatusReading);
-        }
-        return;
-    }
-
-    reset_timeout();
-
-    /*check print all*/
-    if (!obj_->GetConfig()->SupportPrintAllPlates() && m_print_plate_idx == PLATE_ALL_IDX)
-    {
-        show_status(PrintDialogStatus::PrintStatusNotSupportedPrintAll);
-        return;
-    }
-
-    if (!m_check_flag && obj_->is_info_ready()) {
-        update_select_layout(obj_);
-        update_ams_check(obj_);
-        m_check_flag = true;
-    }
-
-    /*do ams mapping if no ams result*/
-    if (m_ams_mapping_result.empty()) {
-        do_ams_mapping(obj_, true);
-        update_filament_change_count();
-    }
-
-    /* multi color external change assist*/
-    if(obj_->is_support_ext_change_assist && !m_check_ext_change_assist->IsShown()){
-        m_check_ext_change_assist->Show(true);
-        m_label_ext_change_assist->Show(true);
-    }else if(!obj_->is_support_ext_change_assist &&m_check_ext_change_assist->IsShown()){
-        m_check_ext_change_assist->Hide();
-        m_label_ext_change_assist->Hide();
-    }
-    /*check external change assist*/
-    if(!m_ams_mapping_result.empty() && is_enable_external_change_assist(m_ams_mapping_result)){
-        m_check_ext_change_assist->Enable(true);
-    }else{
-        m_check_ext_change_assist->SetValue(false);
-        m_check_ext_change_assist->Enable(false);
-    }
-
-     /*reading done*/
-    if (wxGetApp().app_config) {
-        if (obj_->upgrade_force_upgrade) {
-            show_status(PrintDialogStatus::PrintStatusNeedForceUpgrading);
-            return;
+            if (get_status() == PrintDialogStatus::PrintStatusRefreshingMachineList)
+                m_printer_box->GetPrinterComboBox()->Disable();
+            else
+                m_printer_box->GetPrinterComboBox()->Enable();
         }
 
-        if (obj_->upgrade_consistency_request) {
-            show_status(PrintStatusNeedConsistencyUpgrading);
-            return;
-        }
-    }
+        /*mode check*/
+        if (get_status() == PrintDialogStatus::PrintStatusRefreshingMachineList || get_status() == PrintDialogStatus::PrintStatusSending) return;
 
-    if (!obj_->is_fdm_type()) {
-        show_status(PrintDialogStatus::PrintStatusModeNotFDM);
-        return;
-    }
+        /*no valid gcode file*/
+        if (m_print_type == PrintFromType::FROM_NORMAL) {
+            auto& plate_list = m_plater->get_partplate_list();
 
-    if (is_blocking_printing(obj_)) {
-        show_status(PrintDialogStatus::PrintStatusUnsupportedPrinter);
-        return;
-    } else if (obj_->is_in_upgrading()) {
-        show_status(PrintDialogStatus::PrintStatusInUpgrading);
-        return;
-    } else if (obj_->is_system_printing()) {
-        show_status(PrintDialogStatus::PrintStatusInSystemPrinting);
-        return;
-    } else if (obj_->is_in_printing() || obj_->ams_status_main == AMS_STATUS_MAIN_FILAMENT_CHANGE) {
-        show_status(PrintDialogStatus::PrintStatusInPrinting);
-        return;
-    } else if (!obj_->GetConfig()->SupportPrintWithoutSD() && (obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::NO_SDCARD)) {
-        show_status(PrintDialogStatus::PrintStatusNoSdcard);
-        return;
-    }
-    if (wxGetApp().preset_bundle->filament_presets.size() > 16 && m_print_type != PrintFromType::FROM_SDCARD_VIEW) { 
-        if (!obj_->is_enable_ams_np && !obj_->is_enable_np)
-        {
-            show_status(PrintDialogStatus::PrintStatusColorQuantityExceed);
-            return;
-        }
-    }
-
-    /*check sdcard when if lan mode printer*/
-    if (obj_->is_lan_mode_printer()) {
-        if (obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::NO_SDCARD
-            && !obj_->is_support_print_with_emmc) {
-            show_status(PrintDialogStatus::PrintStatusLanModeNoSdcard);
-            return;
-        } else if (obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::HAS_SDCARD_READONLY) {
-            show_status(PrintDialogStatus::PrintStatusLanModeSDcardNotAvailable);
-            return;
-        } else if(obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::HAS_SDCARD_ABNORMAL &&  (wxGetApp().app_config->get("allow_abnormal_storage") == "false")){
-            show_status(PrintDialogStatus::PrintStatusLanModeSDcardNotAvailable);
-            return;
-        }
-    }
-
-    if (!can_support_pa_auto_cali() && m_checkbox_list["flow_cali"]->IsShown() && m_checkbox_list["flow_cali"]->getValue() == "on") {
-        show_status(PrintDialogStatus::PrintStatusTPUUnsupportAutoCali);
-        return;
-    }
-
-    /*disable print when there is no mapping*/
-    if (obj_->GetExtderSystem()->GetTotalExtderCount() > 1) {
-        for (auto mres : m_ams_mapping_result) {
-            if (mres.ams_id.empty() && mres.slot_id.empty()) {
-                show_status(PrintDialogStatus::PrintStatusAmsMappingInvalid);
-                return;
-            }
-        }
-    }
-
-    const auto &full_config = wxGetApp().preset_bundle->full_config();
-    size_t      nozzle_nums = full_config.option<ConfigOptionFloats>("nozzle_diameter")->values.size();
-
-    /*the nozzle type of preset and machine are different*/
-    if (nozzle_nums > 1 && m_print_type == FROM_NORMAL) {
-        if (!_is_nozzle_data_valid(obj_, *obj_->GetExtderSystem())) {
-            show_status(PrintDialogStatus::PrintStatusNozzleDataInvalid);
-            return;
-        }
-
-        wxString error_message;
-        if (!is_nozzle_type_match(*obj_->GetExtderSystem(), error_message)) {
-            std::vector<wxString> params{error_message};
-            params.emplace_back(_L("Tips: If you changed your nozzle of your printer lately, Please go to 'Device -> Printer parts' to change your nozzle setting."));
-            show_status(PrintDialogStatus::PrintStatusNozzleMatchInvalid, params);
-            return;
-        }
-    }
-
-    // check nozzle type and diameter
-    if (m_print_type == PrintFromType::FROM_NORMAL)
-    {
-        int mismatch_nozzle_id = 0;
-        float nozzle_diameter = 0;
-        if (!_is_same_nozzle_diameters(obj_, nozzle_diameter, mismatch_nozzle_id))
-        {
-            std::vector<wxString> msg_params;
-            if (obj_->GetExtderSystem()->GetTotalExtderCount() == 2) {
-                wxString mismatch_nozzle_str;
-                if (mismatch_nozzle_id == MAIN_EXTRUDER_ID) {
-                    mismatch_nozzle_str = _L("right nozzle");
-                } else {
-                    mismatch_nozzle_str = _L("left nozzle");
+            bool has_valid_gcode = false;
+            if (m_print_plate_idx == PLATE_ALL_IDX) {
+                const int plate_count = plate_list.get_plate_count();
+                for (int idx = 0; idx < plate_count; ++idx) {
+                    PartPlate* plate = plate_list.get_plate(idx);
+                    if (plate && plate->is_valid_gcode_file()) {
+                        has_valid_gcode = true;
+                        break;
+                    }
                 }
-
-                const wxString &nozzle_config = wxString::Format(_L("The %s diameter(%.1fmm) of current printer doesn't match with the slicing file (%.1fmm). "
-                                                                    "Please make sure the nozzle installed matches with settings in printer, then set the "
-                                                                    "corresponding printer preset when slicing."),
-                                                                 mismatch_nozzle_str, obj_->GetExtderSystem()->GetNozzleDiameter(mismatch_nozzle_id), nozzle_diameter);
-                msg_params.emplace_back(nozzle_config);
             } else {
-                const wxString &nozzle_config = wxString::Format(_L("The current nozzle diameter (%.1fmm) doesn't match with the slicing file (%.1fmm). "
-                                                                    "Please make sure the nozzle installed matches with settings in printer, then set the "
-                                                                    "corresponding printer preset when slicing."),
-                                                                 obj_->GetExtderSystem()->GetNozzleDiameter(0), nozzle_diameter);
-                msg_params.emplace_back(nozzle_config);
+                PartPlate* plate = plate_list.get_plate(m_print_plate_idx);
+                if (!plate) {
+                    plate = plate_list.get_curr_plate();
+                }
+                has_valid_gcode = plate && plate->is_valid_gcode_file();
             }
 
-            msg_params.emplace_back(_L("Tips: If you changed your nozzle of your printer lately, Please go to 'Device -> Printer parts' to change your nozzle setting."));
-            show_status(PrintDialogStatus::PrintStatusNozzleDiameterMismatch, msg_params);
+            if (!has_valid_gcode) {
+                show_status(PrintDialogStatus::PrintStatusBlankPlate);
+                return;
+            }
+        }
+
+        /** error check **/
+        /* check cloud machine connections */
+        if (!obj_->is_lan_mode_printer() && !agent->is_server_connected()) {
+            show_status(PrintDialogStatus::PrintStatusConnectingServer);
+            reset_timeout();
             return;
         }
 
-        const auto &used_nozzle_idxes = _get_used_nozzle_idxes();
-        for (const auto &extder : obj_->GetExtderSystem()->GetExtruders()) {
-            if (used_nozzle_idxes.count(extder.GetNozzleId()) == 0) { continue; }
+        if (!obj_->is_info_ready()) {
+            if (is_timeout()) {
+                m_ams_mapping_result.clear();
+                sync_ams_mapping_result(m_ams_mapping_result);
+                show_status(PrintDialogStatus::PrintStatusReadingTimeout);
+            } else {
+                m_timeout_count++;
+                show_status(PrintDialogStatus::PrintStatusReading);
+            }
+            return;
+        }
 
-            std::string filament_type;
-            if (!is_nozzle_hrc_matched(&extder, filament_type)) {
-                std::vector<wxString> error_msg;
-                error_msg.emplace_back(wxString::Format(_L("The hardness of current material (%s) exceeds the hardness of %s(%s). Please verify the nozzle or material settings and try again."),
-                                                           filament_type, _get_nozzle_name(obj_->GetExtderSystem()->GetTotalExtderCount(), extder.GetNozzleId()), format_steel_name(extder.GetNozzleType())));
-                show_status(PrintDialogStatus::PrintStatusNozzleTypeMismatch, error_msg);
+        reset_timeout();
+
+        /*check print all*/
+        if (!obj_->GetConfig()->SupportPrintAllPlates() && m_print_plate_idx == PLATE_ALL_IDX)
+        {
+            show_status(PrintDialogStatus::PrintStatusNotSupportedPrintAll);
+            return;
+        }
+
+        if (!m_check_flag && obj_->is_info_ready()) {
+            update_select_layout(obj_);
+            update_ams_check(obj_);
+            m_check_flag = true;
+        }
+
+        /*do ams mapping if no ams result*/
+        if (m_ams_mapping_result.empty()) {
+            do_ams_mapping(obj_, true);
+            update_filament_change_count();
+        }
+
+        /* multi color external change assist*/
+        if(obj_->is_support_ext_change_assist && !m_check_ext_change_assist->IsShown()){
+            m_check_ext_change_assist->Show(true);
+            m_label_ext_change_assist->Show(true);
+        }else if(!obj_->is_support_ext_change_assist &&m_check_ext_change_assist->IsShown()){
+            m_check_ext_change_assist->Hide();
+            m_label_ext_change_assist->Hide();
+        }
+        /*check external change assist*/
+        if(!m_ams_mapping_result.empty() && is_enable_external_change_assist(m_ams_mapping_result)){
+            m_check_ext_change_assist->Enable(true);
+        }else{
+            m_check_ext_change_assist->SetValue(false);
+            m_check_ext_change_assist->Enable(false);
+        }
+
+        /*reading done*/
+        if (wxGetApp().app_config) {
+            if (obj_->upgrade_force_upgrade) {
+                show_status(PrintDialogStatus::PrintStatusNeedForceUpgrading);
+                return;
+            }
+
+            if (obj_->upgrade_consistency_request) {
+                show_status(PrintStatusNeedConsistencyUpgrading);
                 return;
             }
         }
-    }
 
-    if (!DevPrinterConfigUtil::support_ams_ext_mix_print(obj_->printer_type)) {
-        bool useAms = _HasAms(m_ams_mapping_result);
-        bool useExt = _HasExt(m_ams_mapping_result);
-        if (useAms && useExt) {
-             show_status(PrintDialogStatus::PrintStatusAmsMappingMixInvalid);
-             return;
-        }
-    }
-
-    if (obj_->GetFilaSystem()->IsAmsSettingUp()) {
-        show_status(PrintDialogStatus::PrintStatusAmsOnSettingup);
-        return;
-    }
-
-    if (!m_ams_mapping_res && !DevMappingUtil::is_valid_mapping_result(obj_, m_ams_mapping_result)) {
-        show_status(PrintDialogStatus::PrintStatusAmsMappingInvalid);
-        return;
-    }
-
-    // filaments check for black list
-    for (auto i = 0; i < m_ams_mapping_result.size(); i++) {
-        const auto &ams_id  = m_ams_mapping_result[i].get_ams_id();
-        const auto &slot_id = m_ams_mapping_result[i].get_slot_id();
-
-        auto tid = m_ams_mapping_result[i].tray_id;
-
-        std::string filament_type = boost::to_upper_copy(m_ams_mapping_result[i].type);
-        std::string filament_brand;
-
-        for (auto fs : m_filaments) {
-            if (fs.id == m_ams_mapping_result[i].id) { filament_brand = m_filaments[i].brand; }
+        if (!obj_->is_fdm_type()) {
+            show_status(PrintDialogStatus::PrintStatusModeNotFDM);
+            return;
         }
 
-        bool        in_blacklist = false;
-        std::string action;
-        wxString info;
-        wxString wiki_url;
-        DevFilaBlacklist::check_filaments_in_blacklist_url(obj_->printer_type, filament_brand, filament_type, m_ams_mapping_result[i].filament_id, ams_id, slot_id, "", in_blacklist,
-                                                        action, info, wiki_url);
-        if (in_blacklist) {
-
-            std::vector<wxString> error_msg { info };
-            if (action == "prohibition") {
-                show_status(PrintDialogStatus::PrintStatusHasFilamentInBlackListError, error_msg, wiki_url);
-                return;
-            }
-            else if (action == "warning") {
-                show_status(PrintDialogStatus::PrintStatusHasFilamentInBlackListWarning, error_msg, wiki_url);/** warning check **/
-              //  return;
-            }
+        if (is_blocking_printing(obj_)) {
+            show_status(PrintDialogStatus::PrintStatusUnsupportedPrinter);
+            return;
+        } else if (obj_->is_in_upgrading()) {
+            show_status(PrintDialogStatus::PrintStatusInUpgrading);
+            return;
+        } else if (obj_->is_system_printing()) {
+            show_status(PrintDialogStatus::PrintStatusInSystemPrinting);
+            return;
+        } else if (obj_->is_in_printing() || obj_->ams_status_main == AMS_STATUS_MAIN_FILAMENT_CHANGE) {
+            show_status(PrintDialogStatus::PrintStatusInPrinting);
+            return;
+        } else if (!obj_->GetConfig()->SupportPrintWithoutSD() && (obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::NO_SDCARD)) {
+            show_status(PrintDialogStatus::PrintStatusNoSdcard);
+            return;
         }
-    }
-
-    /** warning check **/
-    struct ExtruderStatus
-    {
-        bool has_ams{false};
-        bool has_vt_slot{false};
-    };
-    std::vector<ExtruderStatus> extruder_status(nozzle_nums);
-    for (const FilamentInfo &item : m_ams_mapping_result) {
-        if (item.ams_id.empty()) continue;
-
-        int extruder_id = obj_->get_extruder_id_by_ams_id(item.ams_id);
-        if (devPrinterUtil::IsVirtualSlot(item.ams_id))
-            extruder_status[extruder_id].has_vt_slot = true;
-        else
-            extruder_status[extruder_id].has_ams = true;
-    }
-    for (auto extruder : extruder_status) {
-        if (extruder.has_ams && extruder.has_vt_slot) {
-            show_status(PrintDialogStatus::PrintStatusMixAmsAndVtSlotWarning);
-          //  return;
-        }
-    }
-    if (m_ams_mapping_res) {
-        if (has_timelapse_warning()) {
-            show_status(PrintDialogStatus::PrintStatusTimelapseWarning);
-          //  return;
-        }
-    } else {
-        if (DevMappingUtil::is_valid_mapping_result(obj_, m_ams_mapping_result)) {
-            if (!check_sdcard_for_timelpase(obj_)) {
-                if (has_timelapse_warning()) {
-                    show_status(PrintDialogStatus::PrintStatusTimelapseWarning);
-                   // return;
-                }
-            }
-        }
-    }
-
-    /*STUDIO-10970 check the k value and flow cali option*/
-    if (m_checkbox_list["flow_cali"]->IsShown() && m_checkbox_list["flow_cali"]->getValue() == "auto") {
-        const auto &not_default_ams_names = _check_kval_not_default(obj_, m_ams_mapping_result);
-        if (!not_default_ams_names.empty()) {
-            std::vector<wxString> params{not_default_ams_names};
-            show_status(PrintDialogStatus::PrintStatusWarningKvalueNotUsed);
-           // return;
-        }
-    }
-
-    /*Check high temperture slicing*/
-    if (m_print_type == PrintFromType::FROM_NORMAL) {
-        std::set<string>  high_temp_filaments;
-        std::unordered_set<int> known_fila_soften_extruders;
-        std::unordered_set<int> unknown_fila_soften_extruders;
-        auto preset_full_config = wxGetApp().preset_bundle->full_config();
-        auto chamber_temperatures = preset_full_config.option<ConfigOptionInts>("chamber_temperature");
-        for (const FilamentInfo& item : m_ams_mapping_result) {
-            try
+        if (wxGetApp().preset_bundle->filament_presets.size() > 16 && m_print_type != PrintFromType::FROM_SDCARD_VIEW) { 
+            if (!obj_->is_enable_ams_np && !obj_->is_enable_np)
             {
-                int chamber_temp = chamber_temperatures->values[item.id];
-                if (chamber_temp >= 40) {
-                    high_temp_filaments.insert(item.get_display_filament_type());// high printing chamber temperature
+                show_status(PrintDialogStatus::PrintStatusColorQuantityExceed);
+                return;
+            }
+        }
+
+        /*check sdcard when if lan mode printer*/
+        if (obj_->is_lan_mode_printer()) {
+            if (obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::NO_SDCARD
+                && !obj_->is_support_print_with_emmc) {
+                show_status(PrintDialogStatus::PrintStatusLanModeNoSdcard);
+                return;
+            } else if (obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::HAS_SDCARD_READONLY) {
+                show_status(PrintDialogStatus::PrintStatusLanModeSDcardNotAvailable);
+                return;
+            } else if(obj_->GetStorage()->get_sdcard_state() == DevStorage::SdcardState::HAS_SDCARD_ABNORMAL &&  (wxGetApp().app_config->get("allow_abnormal_storage") == "false")){
+                show_status(PrintDialogStatus::PrintStatusLanModeSDcardNotAvailable);
+                return;
+            }
+        }
+
+        if (!can_support_pa_auto_cali() && m_checkbox_list["flow_cali"]->IsShown() && m_checkbox_list["flow_cali"]->getValue() == "on") {
+            show_status(PrintDialogStatus::PrintStatusTPUUnsupportAutoCali);
+            return;
+        }
+
+        /*disable print when there is no mapping*/
+        if (obj_->GetExtderSystem()->GetTotalExtderCount() > 1) {
+            for (auto mres : m_ams_mapping_result) {
+                if (mres.ams_id.empty() && mres.slot_id.empty()) {
+                    show_status(PrintDialogStatus::PrintStatusAmsMappingInvalid);
+                    return;
+                }
+            }
+        }
+
+        const auto &full_config = wxGetApp().preset_bundle->full_config();
+        size_t      nozzle_nums = full_config.option<ConfigOptionFloats>("nozzle_diameter")->values.size();
+
+        /*the nozzle type of preset and machine are different*/
+        if (nozzle_nums > 1 && m_print_type == FROM_NORMAL) {
+            if (!_is_nozzle_data_valid(obj_, *obj_->GetExtderSystem())) {
+                show_status(PrintDialogStatus::PrintStatusNozzleDataInvalid);
+                return;
+            }
+
+            wxString error_message;
+            if (!is_nozzle_type_match(*obj_->GetExtderSystem(), error_message)) {
+                std::vector<wxString> params{error_message};
+                params.emplace_back(_L("Tips: If you changed your nozzle of your printer lately, Please go to 'Device -> Printer parts' to change your nozzle setting."));
+                show_status(PrintDialogStatus::PrintStatusNozzleMatchInvalid, params);
+                return;
+            }
+        }
+
+        // check nozzle type and diameter
+        if (m_print_type == PrintFromType::FROM_NORMAL)
+        {
+            int mismatch_nozzle_id = 0;
+            float nozzle_diameter = 0;
+            if (!_is_same_nozzle_diameters(obj_, nozzle_diameter, mismatch_nozzle_id))
+            {
+                std::vector<wxString> msg_params;
+                if (obj_->GetExtderSystem()->GetTotalExtderCount() == 2) {
+                    wxString mismatch_nozzle_str;
+                    if (mismatch_nozzle_id == MAIN_EXTRUDER_ID) {
+                        mismatch_nozzle_str = _L("right nozzle");
+                    } else {
+                        mismatch_nozzle_str = _L("left nozzle");
+                    }
+
+                    const wxString &nozzle_config = wxString::Format(_L("The %s diameter(%.1fmm) of current printer doesn't match with the slicing file (%.1fmm). "
+                                                                        "Please make sure the nozzle installed matches with settings in printer, then set the "
+                                                                        "corresponding printer preset when slicing."),
+                                                                    mismatch_nozzle_str, obj_->GetExtderSystem()->GetNozzleDiameter(mismatch_nozzle_id), nozzle_diameter);
+                    msg_params.emplace_back(nozzle_config);
+                } else {
+                    const wxString &nozzle_config = wxString::Format(_L("The current nozzle diameter (%.1fmm) doesn't match with the slicing file (%.1fmm). "
+                                                                        "Please make sure the nozzle installed matches with settings in printer, then set the "
+                                                                        "corresponding printer preset when slicing."),
+                                                                    obj_->GetExtderSystem()->GetNozzleDiameter(0), nozzle_diameter);
+                    msg_params.emplace_back(nozzle_config);
                 }
 
-                for (const auto& extder : obj_->GetExtderSystem()->GetExtruders()) { // check vitrification
-                    if (extder.HasFilamentInExt()) {
-                        const auto& fila_id = obj_->get_filament_id(extder.GetSlotNow().ams_id, extder.GetSlotNow().slot_id);
-                        auto filament_info = wxGetApp().preset_bundle->get_filament_by_filament_id(fila_id);
-                        if (filament_info) {
-                            if (filament_info->temperature_vitrification - chamber_temp <= 5) {
-                                known_fila_soften_extruders.insert(extder.GetExtId());
-                            }
-                        } else {
-                            // the minimum temperature_vitrification of the known filaments is 43 degrees
-                            if (43 - chamber_temp <= 5) { unknown_fila_soften_extruders.insert(extder.GetExtId()); }
-                        }
+                msg_params.emplace_back(_L("Tips: If you changed your nozzle of your printer lately, Please go to 'Device -> Printer parts' to change your nozzle setting."));
+                show_status(PrintDialogStatus::PrintStatusNozzleDiameterMismatch, msg_params);
+                return;
+            }
+
+            const auto &used_nozzle_idxes = _get_used_nozzle_idxes();
+            for (const auto &extder : obj_->GetExtderSystem()->GetExtruders()) {
+                if (used_nozzle_idxes.count(extder.GetNozzleId()) == 0) { continue; }
+
+                std::string filament_type;
+                if (!is_nozzle_hrc_matched(&extder, filament_type)) {
+                    std::vector<wxString> error_msg;
+                    error_msg.emplace_back(wxString::Format(_L("The hardness of current material (%s) exceeds the hardness of %s(%s). Please verify the nozzle or material settings and try again."),
+                                                            filament_type, _get_nozzle_name(obj_->GetExtderSystem()->GetTotalExtderCount(), extder.GetNozzleId()), format_steel_name(extder.GetNozzleType())));
+                    show_status(PrintDialogStatus::PrintStatusNozzleTypeMismatch, error_msg);
+                    return;
+                }
+            }
+        }
+
+        if (!DevPrinterConfigUtil::support_ams_ext_mix_print(obj_->printer_type)) {
+            bool useAms = _HasAms(m_ams_mapping_result);
+            bool useExt = _HasExt(m_ams_mapping_result);
+            if (useAms && useExt) {
+                show_status(PrintDialogStatus::PrintStatusAmsMappingMixInvalid);
+                return;
+            }
+        }
+
+        if (obj_->GetFilaSystem()->IsAmsSettingUp()) {
+            show_status(PrintDialogStatus::PrintStatusAmsOnSettingup);
+            return;
+        }
+
+        if (!m_ams_mapping_res && !DevMappingUtil::is_valid_mapping_result(obj_, m_ams_mapping_result)) {
+            show_status(PrintDialogStatus::PrintStatusAmsMappingInvalid);
+            return;
+        }
+
+        // filaments check for black list
+        for (auto i = 0; i < m_ams_mapping_result.size(); i++) {
+            const auto &ams_id  = m_ams_mapping_result[i].get_ams_id();
+            const auto &slot_id = m_ams_mapping_result[i].get_slot_id();
+
+            auto tid = m_ams_mapping_result[i].tray_id;
+
+            std::string filament_type = boost::to_upper_copy(m_ams_mapping_result[i].type);
+            std::string filament_brand;
+
+            for (auto fs : m_filaments) {
+                if (fs.id == m_ams_mapping_result[i].id) { filament_brand = m_filaments[i].brand; }
+            }
+
+            bool        in_blacklist = false;
+            std::string action;
+            wxString info;
+            wxString wiki_url;
+            DevFilaBlacklist::check_filaments_in_blacklist_url(obj_->printer_type, filament_brand, filament_type, m_ams_mapping_result[i].filament_id, ams_id, slot_id, "", in_blacklist,
+                                                            action, info, wiki_url);
+            if (in_blacklist) {
+
+                std::vector<wxString> error_msg { info };
+                if (action == "prohibition") {
+                    show_status(PrintDialogStatus::PrintStatusHasFilamentInBlackListError, error_msg, wiki_url);
+                    return;
+                }
+                else if (action == "warning") {
+                    show_status(PrintDialogStatus::PrintStatusHasFilamentInBlackListWarning, error_msg, wiki_url);/** warning check **/
+                //  return;
+                }
+            }
+        }
+
+        /** warning check **/
+        struct ExtruderStatus
+        {
+            bool has_ams{false};
+            bool has_vt_slot{false};
+        };
+        std::vector<ExtruderStatus> extruder_status(nozzle_nums);
+        for (const FilamentInfo &item : m_ams_mapping_result) {
+            if (item.ams_id.empty()) continue;
+
+            int extruder_id = obj_->get_extruder_id_by_ams_id(item.ams_id);
+            if (devPrinterUtil::IsVirtualSlot(item.ams_id))
+                extruder_status[extruder_id].has_vt_slot = true;
+            else
+                extruder_status[extruder_id].has_ams = true;
+        }
+        for (auto extruder : extruder_status) {
+            if (extruder.has_ams && extruder.has_vt_slot) {
+                show_status(PrintDialogStatus::PrintStatusMixAmsAndVtSlotWarning);
+            //  return;
+            }
+        }
+        if (m_ams_mapping_res) {
+            if (has_timelapse_warning()) {
+                show_status(PrintDialogStatus::PrintStatusTimelapseWarning);
+            //  return;
+            }
+        } else {
+            if (DevMappingUtil::is_valid_mapping_result(obj_, m_ams_mapping_result)) {
+                if (!check_sdcard_for_timelpase(obj_)) {
+                    if (has_timelapse_warning()) {
+                        show_status(PrintDialogStatus::PrintStatusTimelapseWarning);
+                    // return;
                     }
                 }
             }
-            catch (std::exception&) { assert(0); }
         }
 
-        if (!high_temp_filaments.empty()) {
-            wxString filament_strs;/*join the filament strs*/
-            for (auto filament : high_temp_filaments) {
-                filament_strs += filament;
-                if (filament != *high_temp_filaments.rbegin()) {
-                    filament_strs += ", ";
+        /*STUDIO-10970 check the k value and flow cali option*/
+        if (m_checkbox_list["flow_cali"]->IsShown() && m_checkbox_list["flow_cali"]->getValue() == "auto") {
+            const auto &not_default_ams_names = _check_kval_not_default(obj_, m_ams_mapping_result);
+            if (!not_default_ams_names.empty()) {
+                std::vector<wxString> params{not_default_ams_names};
+                show_status(PrintDialogStatus::PrintStatusWarningKvalueNotUsed);
+            // return;
+            }
+        }
+
+        /*Check high temperture slicing*/
+        if (m_print_type == PrintFromType::FROM_NORMAL) {
+            std::set<string>  high_temp_filaments;
+            std::unordered_set<int> known_fila_soften_extruders;
+            std::unordered_set<int> unknown_fila_soften_extruders;
+            auto preset_full_config = wxGetApp().preset_bundle->full_config();
+            auto chamber_temperatures = preset_full_config.option<ConfigOptionInts>("chamber_temperature");
+            for (const FilamentInfo& item : m_ams_mapping_result) {
+                try
+                {
+                    int chamber_temp = chamber_temperatures->values[item.id];
+                    if (chamber_temp >= 40) {
+                        high_temp_filaments.insert(item.get_display_filament_type());// high printing chamber temperature
+                    }
+
+                    for (const auto& extder : obj_->GetExtderSystem()->GetExtruders()) { // check vitrification
+                        if (extder.HasFilamentInExt()) {
+                            const auto& fila_id = obj_->get_filament_id(extder.GetSlotNow().ams_id, extder.GetSlotNow().slot_id);
+                            auto filament_info = wxGetApp().preset_bundle->get_filament_by_filament_id(fila_id);
+                            if (filament_info) {
+                                if (filament_info->temperature_vitrification - chamber_temp <= 5) {
+                                    known_fila_soften_extruders.insert(extder.GetExtId());
+                                }
+                            } else {
+                                // the minimum temperature_vitrification of the known filaments is 43 degrees
+                                if (43 - chamber_temp <= 5) { unknown_fila_soften_extruders.insert(extder.GetExtId()); }
+                            }
+                        }
+                    }
+                }
+                catch (std::exception&) { assert(0); }
+            }
+
+            if (!high_temp_filaments.empty()) {
+                wxString filament_strs;/*join the filament strs*/
+                for (auto filament : high_temp_filaments) {
+                    filament_strs += filament;
+                    if (filament != *high_temp_filaments.rbegin()) {
+                        filament_strs += ", ";
+                    }
+                }
+
+                if (obj_->GetConfig()->HasChamber()) {
+                    const auto& msg = wxString::Format(_L("[ %s ] requires printing in a high-temperature environment. Please close the door."), filament_strs);
+                    show_status(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempCloseDoor, { msg });
+                    if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempCloseDoor)) { return; }
+                } else {
+                    const auto& msg = wxString::Format(_L("[ %s ] requires printing in a high-temperature environment."), filament_strs);
+                    show_status(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTemp, { msg });
+                    if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTemp)) { return; }
                 }
             }
 
-            if (obj_->GetConfig()->HasChamber()) {
-                const auto& msg = wxString::Format(_L("[ %s ] requires printing in a high-temperature environment. Please close the door."), filament_strs);
-                show_status(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempCloseDoor, { msg });
-                if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempCloseDoor)) { return; }
-            } else {
-                const auto& msg = wxString::Format(_L("[ %s ] requires printing in a high-temperature environment."), filament_strs);
-                show_status(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTemp, { msg });
-                if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTemp)) { return; }
+            if (!known_fila_soften_extruders.empty()) {
+                const wxString& msg = wxString::Format(_L("The filament on %s may soften. Please unload."),
+                    _get_ext_loc_str(known_fila_soften_extruders, obj_->GetExtderSystem()->GetTotalExtderCount()));
+                show_status(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempSoft, std::vector<wxString> {msg});
+                if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempSoft)) { return; }
+            }
+
+            if (!unknown_fila_soften_extruders.empty()) {
+                const wxString& msg = wxString::Format(_L("The filament on %s is unknown and may soften. Please set filament."),
+                    _get_ext_loc_str(unknown_fila_soften_extruders, obj_->GetExtderSystem()->GetTotalExtderCount()));
+                show_status(PrintDialogStatus::PrintStatusFilamentWarningUnknownHighChamberTempSoft, std::vector<wxString> {msg});
+                if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningUnknownHighChamberTempSoft)) { return; }
             }
         }
 
-        if (!known_fila_soften_extruders.empty()) {
-            const wxString& msg = wxString::Format(_L("The filament on %s may soften. Please unload."),
-                _get_ext_loc_str(known_fila_soften_extruders, obj_->GetExtderSystem()->GetTotalExtderCount()));
-            show_status(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempSoft, std::vector<wxString> {msg});
-            if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningHighChamberTempSoft)) { return; }
-        }
+        // check extension tool warning
+        UpdateStatusCheckWarning_ExtensionTool(obj_);
 
-        if (!unknown_fila_soften_extruders.empty()) {
-            const wxString& msg = wxString::Format(_L("The filament on %s is unknown and may soften. Please set filament."),
-                _get_ext_loc_str(unknown_fila_soften_extruders, obj_->GetExtderSystem()->GetTotalExtderCount()));
-            show_status(PrintDialogStatus::PrintStatusFilamentWarningUnknownHighChamberTempSoft, std::vector<wxString> {msg});
-            if (PrePrintChecker::is_error(PrintDialogStatus::PrintStatusFilamentWarningUnknownHighChamberTempSoft)) { return; }
-        }
-    }
-
-    // check extension tool warning
-    UpdateStatusCheckWarning_ExtensionTool(obj_);
-
-    /** normal check **/
-    show_status(PrintDialogStatus::PrintStatusReadyToGo);
+        /** normal check **/
+        show_status(PrintDialogStatus::PrintStatusReadyToGo);
+    // }
 }
 
 bool SelectMachineDialog::has_timelapse_warning(wxString &msg_text)

@@ -5279,19 +5279,19 @@ LayerResult GCode::process_layer(
                 if (!m_writer.is_object_start_str_empty()) {
                     m_writer.set_object_start_str("");
                 } else if (m_enable_exclude_object) {
-                    if (is_BBL_Printer()) {
+                    // if (is_BBL_Printer()) {
                         m_writer.set_object_end_str(std::string("; stop printing object, unique label id: ") +
                                                     std::to_string(instance_to_print.label_object_id) + "\n" +
                                                     "M625\n");
-                    } else {
-                        const auto gflavor = print.config().gcode_flavor.value;
-                        if (gflavor == gcfKlipper) {
-                            m_writer.set_object_end_str(std::string("EXCLUDE_OBJECT_END NAME=") +
-                                                        get_instance_name(&instance_to_print.print_object, inst.id) + "\n");
-                        } else if (gflavor == gcfMarlinLegacy || gflavor == gcfMarlinFirmware || gflavor == gcfRepRapFirmware) {
-                            m_writer.set_object_end_str(std::string("M486 S-1\n"));
-                        }
-                    }
+                    // } else {
+                    //     const auto gflavor = print.config().gcode_flavor.value;
+                    //     if (gflavor == gcfKlipper) {
+                    //         m_writer.set_object_end_str(std::string("EXCLUDE_OBJECT_END NAME=") +
+                    //                                     get_instance_name(&instance_to_print.print_object, inst.id) + "\n");
+                    //     } else if (gflavor == gcfMarlinLegacy || gflavor == gcfMarlinFirmware || gflavor == gcfRepRapFirmware) {
+                    //         m_writer.set_object_end_str(std::string("M486 S-1\n"));
+                    //     }
+                    // }
                 }
             }
         }
