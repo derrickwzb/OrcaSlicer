@@ -131,7 +131,45 @@ int MoonrakerPrinterAgent::send_message_to_printer(std::string dev_id, std::stri
 {
     (void) qos;
     (void) flag;
-    return handle_request(dev_id, json_str);
+    // return handle_request(dev_id, json_str);
+    nlohmann::json payload;
+    payload["script"]       = json_str;
+    std::string payload_str = payload.dump();
+
+    std::string response_body;
+    bool        success = false;
+    std::string http_error;
+
+    auto http = Http::post(join_url(device_info.base_url, "/printer/gcode/script"));
+    if (!device_info.api_key.empty()) {
+        http.header("X-Api-Key", device_info.api_key);
+    }
+    http.header("Content-Type", "application/json")
+        .set_post_body(payload_str)
+        .timeout_connect(5)
+        .timeout_max(10)
+        .on_complete([&](std::string body, unsigned status_code) {
+            if (status_code == 200) {
+                response_body = body;
+                success       = true;
+            } else {
+                http_error = "HTTP error: " + std::to_string(status_code);
+            }
+        })
+        .on_error([&](std::string body, std::string err, unsigned status_code) {
+            http_error = err;
+            if (status_code > 0) {
+                http_error += " (HTTP " + std::to_string(status_code) + ")";
+            }
+        })
+        .perform_sync();
+
+    if (!success) {
+        BOOST_LOG_TRIVIAL(error) << "MoonrakerPrinterAgent: send_gcode failed: " << http_error;
+        return false;
+    }
+
+    return true;
 }
 
 int MoonrakerPrinterAgent::connect_printer(std::string dev_id, std::string dev_ip, std::string username, std::string password, bool use_ssl)
@@ -372,7 +410,9 @@ int MoonrakerPrinterAgent::start_local_print(PrintParams params, OnUpdateStatusF
     // Start print via gcode script (simpler than JSON-RPC)
     if (update_fn)
         update_fn(PrintingStageSending, 0, "Starting print...");
-    std::string gcode = "SDCARD_PRINT_FILE FILENAME=" + upload_filename;
+
+    upload_filename = "\"" + upload_filename + "\"";
+     std::string gcode = "SDCARD_PRINT_FILE FILENAME=" + upload_filename;
     if (!send_gcode(device_info.dev_id, gcode)) {
         return BAMBU_NETWORK_ERR_PRINT_LP_PUBLISH_MSG_FAILED;
     }
@@ -1192,6 +1232,8 @@ bool MoonrakerPrinterAgent::query_printer_status(const std::string& base_url,
     status = json["result"]["status"];
     return true;
 }
+
+// bool send_command()
 
 bool MoonrakerPrinterAgent::send_gcode(const std::string& dev_id, const std::string& gcode) const
 {

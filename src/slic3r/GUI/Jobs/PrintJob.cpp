@@ -272,10 +272,6 @@ void PrintJob::process(Ctl &ctl)
     params.task_ext_change_assist = this->task_ext_change_assist;
     params.try_emmc_print         = this->could_emmc_print;
 
-    // if (m_print_type == "from_sdcard_view") {
-    //     params.dst_file = m_dst_path;
-    // }
-
     if ((!m_dst_path.empty() && !wxGetApp().preset_bundle->is_bbl_vendor() )|| m_print_type == "from_sdcard_view") {                                                                                                                                                                                               
         params.dst_file = m_dst_path;                                                                                                                                                                                        
     }  
@@ -614,7 +610,14 @@ void PrintJob::process(Ctl &ctl)
                     return;
                 case DevStorage::SdcardState::HAS_SDCARD_NORMAL:
                     ctl.update_status(curr_percent, _u8L("Sending print job over LAN"));
-                    result = m_agent->start_local_print(params, update_fn, cancel_fn);
+                    if(!wxGetApp().preset_bundle->is_bbl_vendor())
+                    {
+                        //@todo: send mapping as command
+                        result = m_agent->start_local_print(params, update_fn, cancel_fn);
+                    }
+                    else{
+                        result = m_agent->start_local_print(params, update_fn, cancel_fn);
+                    }
                     break;
                 default:
                     ctl.update_status(curr_percent, _u8L("Encountered an unknown error with the Storage status. Please try again."));

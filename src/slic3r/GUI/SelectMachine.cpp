@@ -2,6 +2,7 @@
 #include "DeviceManager.hpp"
 #include "I18N.hpp"
 
+#include "PrePrintChecker.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Thread.hpp"
 #include "libslic3r/Color.hpp"
@@ -519,6 +520,11 @@ SelectMachineDialog::SelectMachineDialog(Plater *plater)
 
     m_options_other = new wxPanel(m_scroll_area);
 
+    auto option_enable_multi_box = new PrintOption(
+        m_options_other, _L("Enable Box"),
+        _L("Activate the multi-color box for multi-color printing with multiple filaments."),
+        ops_no_auto, "enable_multi_box");
+
 
     auto option_timelapse = new PrintOption(m_options_other, _L("Timelapse"), wxEmptyString, ops_no_auto, "timelapse");
 
@@ -541,11 +547,13 @@ SelectMachineDialog::SelectMachineDialog(Plater *plater)
 
     m_sizer_options = new wxGridSizer(0, 2, FromDIP(5), FromDIP(10));
     m_sizer_options->Add(option_timelapse, 0, wxEXPAND);
+    m_sizer_options->Add(option_enable_multi_box, 0, wxEXPAND);
     m_sizer_options->Add(option_auto_bed_level, 0, wxEXPAND);
     m_sizer_options->Add(option_flow_dynamics_cali, 0, wxEXPAND);
     m_sizer_options->Add(option_nozzle_offset_cali_cali, 0, wxEXPAND);
 
     m_checkbox_list_order.push_back(option_timelapse);
+    m_checkbox_list_order.push_back(option_enable_multi_box);
     m_checkbox_list_order.push_back(option_auto_bed_level);
     m_checkbox_list_order.push_back(option_flow_dynamics_cali);
     m_checkbox_list_order.push_back(option_nozzle_offset_cali_cali);
@@ -555,13 +563,14 @@ SelectMachineDialog::SelectMachineDialog(Plater *plater)
     m_options_other->Fit();
 
     m_checkbox_list["timelapse"]     = option_timelapse;
+    m_checkbox_list["enable_multi_box"]  = option_enable_multi_box;
     m_checkbox_list["bed_leveling"]  = option_auto_bed_level;
     m_checkbox_list["flow_cali"]     = option_flow_dynamics_cali;
     m_checkbox_list["nozzle_offset_cali"] = option_nozzle_offset_cali_cali;
     for (auto print_opt : m_checkbox_list_order) {
         print_opt->Bind(EVT_SWITCH_PRINT_OPTION, [this](auto &e) { save_option_vals(); });
     }
-
+    option_enable_multi_box->Hide();
     option_auto_bed_level->Hide();
     option_flow_dynamics_cali->Hide();
     option_nozzle_offset_cali_cali->Hide();
@@ -1850,6 +1859,11 @@ bool SelectMachineDialog::is_nozzle_hrc_matched(const DevExtder* extruder, std::
         MaterialItem* m = item->item;
         auto filament_nozzle_hrc = preset_bundle->get_required_hrc_by_filament_type(m->m_material_name.ToStdString());
 
+        if(printer_nozzle_hrc < 0)
+        {
+            printer_nozzle_hrc = 0;
+        }
+
         if (abs(filament_nozzle_hrc) > abs(printer_nozzle_hrc)) {
             filament_type = m->m_material_name.ToStdString();
             BOOST_LOG_TRIVIAL(info) << "filaments hardness mismatch: filament = " << filament_type << " printer_nozzle_hrc = " << printer_nozzle_hrc;
@@ -2232,6 +2246,13 @@ void SelectMachineDialog::update_option_opts(MachineObject *obj)
         return;
     }
 
+    if(!wxGetApp().preset_bundle->is_bbl_vendor())
+    {
+        /*enable multi box*/
+        m_checkbox_list["enable_multi_box"]->Show();
+        m_checkbox_list["enable_multi_box"]->update_options(ops_no_auto, _L("Activate the multi-color box for multi-color printing with multiple filaments."));
+    }
+
     /*timelapse*/
     m_checkbox_list["timelapse"]->Show();
 
@@ -2338,6 +2359,21 @@ void SelectMachineDialog::load_option_vals(MachineObject *obj)
         m_checkbox_list["timelapse"]->setValue("off");
         m_checkbox_list["timelapse"]->update_tooltip(error_messgae);
     }
+
+    // if(has_box_machine){
+        // m_checkbox_list["enable_multi_box"]->enable(true);
+        // m_checkbox_list["enable_multi_box"]->update_tooltip(wxEmptyString);
+        // bool useExt = _HasExt(m_ams_mapping_result);
+        // //y75
+        // if (useExt) {
+            // m_checkbox_list["enable_multi_box"]->setValue("off");
+        // } else {
+        //     m_checkbox_list["enable_multi_box"]->setValue("on");
+        // }
+    // } else {
+    //     m_checkbox_list["enable_multi_box"]->enable(false);
+    //     m_checkbox_list["enable_multi_box"]->update_tooltip(_L("The machine is not synchronized with the box, so the box cannot be activated."));
+    // }
 }
 
 void SelectMachineDialog::save_option_vals()
@@ -2537,7 +2573,8 @@ void SelectMachineDialog::on_send_print()
         m_ext_change_assist,
         m_checkbox_list["bed_leveling"]->getValueInt(),
         m_checkbox_list["flow_cali"]->getValueInt(),
-        m_checkbox_list["nozzle_offset_cali"]->getValueInt()
+        m_checkbox_list["nozzle_offset_cali"]->getValueInt(),
+        m_checkbox_list["enable_multi_box"]->getValueInt()
     );
 
     if (obj_->HasAms()) {
@@ -2552,6 +2589,55 @@ void SelectMachineDialog::on_send_print()
         }
         else {
             m_print_job->task_use_ams = true;
+        }
+        if(!wxGetApp().preset_bundle->is_bbl_vendor())
+        {   
+        // for (auto item : m_checkbox_list) {
+            if(m_checkbox_list.find("enable_multi_box") != m_checkbox_list.end())
+            {
+                wxString command;
+                // wxString msg = _L("Box Setting..");
+                // m_status_bar->update_status(msg, m_is_canceled, 10, true);
+                if (m_checkbox_list["enable_multi_box"]->getValue() == "on"){
+                    command = "SAVE_VARIABLE VARIABLE=enable_box VALUE=1";
+                }
+                else {
+                    command = "SAVE_VARIABLE VARIABLE=enable_box VALUE=0";
+                }
+                // send enable box command @TODO : error check
+                wxGetApp().getAgent()->send_message_to_printer(obj_->get_dev_id(), command.ToStdString(), 0,0);
+                    // send print command for save variables config for ams mapping before print
+                if (m_checkbox_list["enable_multi_box"]->getValue() == "on")
+                {
+                    for (auto result : m_ams_mapping_result) {
+                        command = wxString::Format(
+                            "SAVE_VARIABLE VARIABLE=value_t%d VALUE=\\\"'slot%s'\\\"",
+                            result.id,
+                            result.slot_id
+                        );
+                        //send command to printer. assuming it is moonraker now @TODO: error check
+                        wxGetApp().getAgent()->send_message_to_printer(obj_->get_dev_id(), command.ToStdString(), 0,0);
+                    }
+                }
+            }
+            // @TODO implement timelapse checkbox send to moonraker printers
+            // if((m_checkbox_list.find("timelapse") != m_checkbox_list.end()) && timelapse_option)
+            // {
+            //     bool open_timelapse;
+            //     wxString msg = _L("Set timelapse..");
+            //     m_status_bar->update_status(msg, m_is_canceled, 10, true);
+            //     if (m_checkbox_list["timelapse"]->getValue() == "on") {
+            //         open_timelapse = true;
+            //     }
+            //     else {
+            //         open_timelapse = false;
+            //     }
+            //     success &= upload_job.printhost->send_timelapse_status(check_status_msg, select_machine.url, open_timelapse);
+            //     if (!success) {
+            //         show_status(PrintDialogStatus::TimelapseSettingFailed);
+            //         return;
+            //     }
+            // }
         }
     } else {
         m_print_job->task_use_ams = false;

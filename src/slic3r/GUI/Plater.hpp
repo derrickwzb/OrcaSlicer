@@ -139,6 +139,8 @@ class Sidebar : public wxPanel
     int                                     m_last_combo_bedtype_count{0};
     bool                                    m_begin_sync_printer_status{false};
     SyncAmsInfoDialog*                      m_sync_dlg{nullptr};
+    std::map<int, std::pair<std::string, std::string>> m_last_runtime_sync_maps;
+    bool                                    m_last_runtime_sync_has_manual{false};
 
     void update_sync_ams_btn_enable(wxUpdateUIEvent &e);
 
@@ -194,6 +196,7 @@ public:
     std::map<int, DynamicPrintConfig> build_filament_ams_list(MachineObject* obj);
     void sync_ams_list(bool is_from_big_sync_btn = false);
     void sync_box_list(bool is_from_big_sync_btn = false);
+    bool get_last_runtime_sync_maps(std::map<int, std::pair<std::string, std::string>> &out_maps) const;
     bool sync_extruder_list();
     bool need_auto_sync_extruder_list_after_connect_priner(const MachineObject* obj);
     void update_sync_status(const MachineObject* obj);

@@ -3415,7 +3415,6 @@ void Sidebar::load_ams_list(MachineObject* obj)
 
 void Sidebar::sync_box_list(bool is_from_big_sync_btn)
 {
-    
     auto obj = wxGetApp().getDeviceManager()->get_selected_machine();
     // std::string cur_preset_name = wxGetApp().get_tab(Preset::TYPE_PRINTER)->get_presets()->get_edited_preset().name;
     // if(obj && qdsdev && cur_preset_name.find(obj->m_type) != std::string::npos)
@@ -3456,7 +3455,11 @@ void Sidebar::sync_box_list(bool is_from_big_sync_btn)
         m_sync_dlg->set_info(temp_info);
     }
     int dlg_res{ (int)wxID_CANCEL };
-    if (m_sync_dlg->is_need_show()) {
+    size_t used_filament_count = 0;                                                                                                                                                                                                                                                                                   
+    if (auto *plate = wxGetApp().plater()->get_partplate_list().get_curr_plate(); plate != nullptr) {                                                                                                                                                                                                                 
+        used_filament_count = plate->get_used_filaments().size();
+    } 
+    if ((used_filament_count > 1) && m_sync_dlg->is_need_show()) {
         m_sync_dlg->deal_only_exist_ext_spool(obj);
         if (is_from_big_sync_btn && m_sync_dlg->is_dirty_filament()) {
             wxGetApp().get_tab(Preset::TYPE_FILAMENT)->select_preset(wxGetApp().preset_bundle->filament_presets[0], false, "", false, true);
@@ -10107,31 +10110,33 @@ void Plater::priv::on_action_print_plate(SimpleEvent&)
     } else {
 
          // Build required-data from current sliced plate                                                                                                                                                                                                  
-  Slic3r::DynamicPrintConfig cfg = wxGetApp().preset_bundle->printers.get_edited_preset().config;                                                                                                                                                   
-  Slic3r::Model mdl = wxGetApp().model();                                                                                                                                                                                                           
-  Slic3r::PlateDataPtrs plate_data_list;                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                    
-  // current plate only                                                                                                                                                                                                                             
-  int curr_idx = partplate_list.get_curr_plate_index();                                                                                                                                                                                             
-  partplate_list.store_to_3mf_structure(plate_data_list, true, curr_idx);                                                                                                                                                                           
-                                                                                                                                                                                                                                                    
-  PartPlate* curr_plate = partplate_list.get_curr_plate();                                                                                                                                                                                          
-  std::string gcode_path = curr_plate ? curr_plate->get_gcode_filename() : "";                                                                                                                                                                      
-  std::string file_name  = q->get_export_gcode_filename("", true).ToStdString();                                                                                                                                                                    
-PresetBundle* pb = wxGetApp().preset_bundle;                                                                                                                                                                                                      
-  std::string model_id = pb->printers.get_edited_preset().get_printer_type(pb);                                                                                                                                                                     
-                                                                                                                                                                                                                                                    
-  for (auto* plate : plate_data_list) {                                                                                                                                                                                                             
-      if (plate) plate->printer_model_id = model_id;                                                                                                                                                                                                
-  }                                                                                                                                                                                                                                                                         
-  // this populates m_required_data_file_path / list                              
-q->update_print_required_data(cfg, mdl, plate_data_list, file_name, gcode_path); 
-        int extruders_size = wxGetApp().plater()->get_partplate_list().get_curr_plate()->get_used_filaments().size();
-        bool is_can_change_color = preview->get_canvas3d()->get_gcode_viewer().get_layers_slider()->get_is_can_change_color();
+        Slic3r::DynamicPrintConfig cfg = wxGetApp().preset_bundle->printers.get_edited_preset().config;                                                                                                                                                   
+        Slic3r::Model mdl = wxGetApp().model();                                                                                                                                                                                                           
+        Slic3r::PlateDataPtrs plate_data_list;                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                            
+        // current plate only                                                                                                                                                                                                                             
+        int curr_idx = partplate_list.get_curr_plate_index();                                                                                                                                                                                             
+        partplate_list.store_to_3mf_structure(plate_data_list, true, curr_idx);                                                                                                                                                                           
+                                                                                                                                                                                                                                                            
+        PartPlate* curr_plate = partplate_list.get_curr_plate();                                                                                                                                                                                          
+        std::string gcode_path = curr_plate ? curr_plate->get_gcode_filename() : "";                                                                                                                                                                      
+        std::string file_name  = q->get_export_gcode_filename("", true).ToStdString();                                                                                                                                                                    
+        PresetBundle* pb = wxGetApp().preset_bundle;                                                                                                                                                                                                      
+        std::string model_id = pb->printers.get_edited_preset().get_printer_type(pb);                                                                                                                                                                     
+                                                                                                                                                                                                                                                            
+        for (auto* plate : plate_data_list) {                                                                                                                                                                                                             
+            if (plate) plate->printer_model_id = model_id;                                                                                                                                                                                                
+        }                                                                                                                                                                                                                                                                         
+        // this populates m_required_data_file_path / list                              
+        q->update_print_required_data(cfg, mdl, plate_data_list, file_name, gcode_path); 
+        // int extruders_size = wxGetApp().plater()->get_partplate_list().get_curr_plate()->get_used_filaments().size();
+        // bool is_can_change_color = preview->get_canvas3d()->get_gcode_viewer().get_layers_slider()->get_is_can_change_color();
 
-        if(extruders_size > 1 && !is_can_change_color){
+        // if(extruders_size > 1 && !is_can_change_color){
+        // asks to sync because orcaslicer uses a pull model and extruder size differs as from other features.
+        // if(!is_can_change_color){
             wxGetApp().plater()->sidebar().sync_box_list();
-        }
+        // }
         // q->send_gcode_legacy(PLATE_CURRENT_IDX, nullptr, true);
         if (!m_select_machine_dlg)
             m_select_machine_dlg = new SelectMachineDialog(q);

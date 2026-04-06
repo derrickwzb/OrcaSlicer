@@ -507,6 +507,10 @@ void AppConfig::set_defaults()
     if (get("print", "timelapse").empty()) {
         set_str("print", "timelapse", "1");
     }
+    
+    if (get("print", "enable_multi_box").empty()) {
+        set_str("print", "enable_multi_box", "0");
+    }
 
     if (get("enable_step_mesh_setting").empty()) {
         set_bool("enable_step_mesh_setting", true);

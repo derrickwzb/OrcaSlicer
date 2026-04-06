@@ -1709,7 +1709,8 @@ const int PresetBundle::get_required_hrc_by_filament_type(const std::string& fil
     static std::unordered_map<std::string, int>filament_type_to_hrc;
     if (filament_type_to_hrc.empty()) {
         for (auto iter = filaments.m_presets.begin(); iter != filaments.m_presets.end(); iter++) {
-            if (iter->vendor && iter->vendor->id == "BBL") {
+            // if (iter->vendor && iter->vendor->id == "BBL") {
+            if (iter->vendor ) {
                 if (iter->config.has("filament_type") && iter->config.has("required_nozzle_HRC")) {
                     auto type = iter->config.opt_string("filament_type", 0);
                     auto hrc = iter->config.opt_int("required_nozzle_HRC", 0);
@@ -2367,7 +2368,14 @@ unsigned int PresetBundle::sync_ams_list(std::vector<std::pair<DynamicPrintConfi
         auto filament_color_type = ams.opt_string("filament_colour_type", 0u);
         auto filament_changed = !ams.has("filament_changed") || ams.opt_bool("filament_changed");
         auto filament_multi_color = ams.opt<ConfigOptionStrings>("filament_multi_colour")->values;
-        auto ams_id     = ams.opt_string("ams_id", 0u);
+        std::string ams_id;
+        if(is_bbl_vendor())
+        {
+            ams_id  = ams.opt_string("ams_id", 0u);
+        }
+        else {
+            ams_id     = std::to_string(std::stoi(ams.opt_string("slot_id", 0u)) / 4 + 1);
+        }
         auto slot_id    = ams.opt_string("slot_id", 0u);
         auto is_placeholder = ams.has("filament_slot_placeholder") && ams.opt_bool("filament_slot_placeholder", 0u);
         ams_infos.push_back({filament_id.empty() ? false : true, false, is_placeholder, filament_color});
@@ -2376,9 +2384,11 @@ unsigned int PresetBundle::sync_ams_list(std::vector<std::pair<DynamicPrintConfi
         index++;
         if (filament_id.empty()) {
             if (use_map) {
-                for (int j = maps.size() - 1; j >= 0; j--) {
-                    if (maps[j].slot_id == slot_id && maps[j].ams_id == ams_id) {
-                        maps.erase(j);
+                for (auto it_map = maps.begin(); it_map != maps.end();) {
+                    if (it_map->second.slot_id == slot_id && it_map->second.ams_id == ams_id) {
+                        it_map = maps.erase(it_map);
+                    } else {
+                        ++it_map;
                     }
                 }
                 ams_filament_presets.push_back("Generic PLA");//for unknow matieral
