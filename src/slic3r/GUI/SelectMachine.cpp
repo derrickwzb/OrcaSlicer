@@ -30,6 +30,7 @@
 #include "DeviceCore/DevMapping.h"
 #include "DeviceCore/DevStorage.h"
 
+#include <slic3r/GUI/GUI_App.hpp>
 #include <wx/progdlg.h>
 #include <wx/clipbrd.h>
 #include <wx/dcgraph.h>
@@ -1850,7 +1851,28 @@ static bool _is_same_nozzle_diameters(MachineObject* obj, float &tag_nozzle_diam
 
 bool SelectMachineDialog::is_nozzle_hrc_matched(const DevExtder* extruder, std::string& filament_type) const
 {
-    auto printer_nozzle_hrc = Print::get_hrc_by_nozzle_type(extruder->GetNozzleType());
+    int printer_nozzle_hrc = 0;  
+    if(!wxGetApp().preset_bundle->is_bbl_vendor())
+    {                                                                                                                                                                                                                                                              
+        auto *pb = wxGetApp().preset_bundle;                                                                                                                                                                                                                                                         
+        if (pb) {                                                                                                                                                                                                                                                                                    
+            // Use edited preset so current user UI edits are included.                                                                                                                                                                                                                              
+            const Preset &user_printer = pb->printers.get_edited_preset();                                                                                                                                                                                                                           
+                                                                                                                                                                                                                                                                                                    
+            if (const auto *hrc_opt = user_printer.config.option<ConfigOptionInt>("nozzle_hrc")) {                                                                                                                                                                                                   
+                printer_nozzle_hrc = std::max(0, hrc_opt->value);                                                                                                                                                                                                                                    
+            }                                                                                                                                                                                                                                                                                        
+        }                                                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                                                                    
+        // Fallback to machine nozzle type mapping if preset HRC is unset/0.                                                                                                                                                                                                                         
+        if (printer_nozzle_hrc <= 0) {                                                                                                                                                                                                                                                               
+            printer_nozzle_hrc = Print::get_hrc_by_nozzle_type(extruder->GetNozzleType());                                                                                                                                                                                                           
+        } 
+    }
+    else
+    {
+        printer_nozzle_hrc = Print::get_hrc_by_nozzle_type(extruder->GetNozzleType());
+    }
 
     auto preset_bundle = wxGetApp().preset_bundle;
     MaterialHash::const_iterator iter = m_materialList.begin();
